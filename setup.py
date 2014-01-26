@@ -18,6 +18,7 @@ setup(
         'License :: OSI Approved :: MIT License',
     ],
     install_requires=[
+        'pyudev',  # http://pyudev.readthedocs.org/en/latest/
     ],
     entry_points={
         'console_scripts': [

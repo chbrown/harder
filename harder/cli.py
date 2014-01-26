@@ -20,6 +20,16 @@ def copy(destination, media_type):
             print >> log_fd, '  %s=%s' % (env_key, env_value)
 
 
+import pyudev
+context = pyudev.Context()
+
+DEVNAME = '/dev/sr0'
+
+for device in context.list_devices(DEVNAME=DEVNAME):
+    print device.items()
+
+
+
 def main():
     types = set(['cd', 'cda', 'dvd', None])
     parser = argparse.ArgumentParser(description='harder: copy soft media to your hard drive',
