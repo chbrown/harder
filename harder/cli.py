@@ -1,10 +1,17 @@
 import os
+import sys
 import argparse
+import threading
+import socket
+import redis
 from datetime import datetime
+# import time
 
+import pyudev
+
+# from pprint import pprint
 import logging
 logger = logging.getLogger(__name__)
-
 
 
 def copy(destination, media_type):
@@ -20,33 +27,70 @@ def copy(destination, media_type):
             print >> log_fd, '  %s=%s' % (env_key, env_value)
 
 
-import pyudev
-context = pyudev.Context()
+def stderr(s):
+    sys.stderr.write(s + '\n')
+    sys.stderr.flush()
 
-DEVNAME = '/dev/sr0'
 
-for device in context.list_devices(DEVNAME=DEVNAME):
-    print device.items()
+def udev_loop(opts):
+    context = pyudev.Context()
+    r = redis.StrictRedis()
 
+    monitor = pyudev.Monitor.from_netlink(context)
+    monitor.filter_by(subsystem='block', device_type='disk')
+    monitor.start()
+
+    stderr('udev polling starting')
+    for device in iter(monitor.poll, None):
+        stderr('%s on %s' % (device.action, device.device_path))
+        # device = find_device(DEVNAME='/dev/sr0')
+        # device = pyudev.Device.from_name(context, 'block', 'sr0')
+        # device = pyudev.Device.from_device_file(context, '/dev/sr0')
+        # only report if a label is available (meaning the drive is available)
+        if 'ID_FS_LABEL' in device:
+            r.hmset(opts.cc, dict(
+                action=device.action,
+                label=device.get('ID_FS_LABEL'),
+                fs_type=device.get('ID_FS_TYPE'),
+                devname=device.get('DEVNAME')
+            ))
+
+
+def task_loop(opts):
+    # loop / block while listening for local tasks
+    r = redis.StrictRedis(host=opts.cc)
+
+    key = opts.host + ':tasks'
+    stderr('looping redis BRPOP %s' % key)
+    while True:
+        task = r.brpop(key)
+        stderr('performing task: %r' % task)
 
 
 def main():
-    types = set(['cd', 'cda', 'dvd', None])
     parser = argparse.ArgumentParser(description='harder: copy soft media to your hard drive',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-d', '--destination', default='/backups/harder', help='Destination directory')
-    parser.add_argument('-t', '--type', choices=types, help='Type of media inserted')
+    parser.add_argument('-d', '--destination', help='Destination directory',
+        default='/backups/harder')
+    parser.add_argument('--host', type=str, help='Hostname of current machine',
+        default=socket.gethostname())
+    parser.add_argument('--cc', type=str, help='Remote address of UI',
+        default='salt')
     parser.add_argument('-v', '--verbose', action='store_true', help='Log extra information')
     # parser.add_argument('-V', '--version', action='version', version=__version__)
-    # opts, _ = parser.parse_known_args()
     opts = parser.parse_args()
 
     level = logging.DEBUG if opts.verbose else logging.INFO
     logging.basicConfig(level=level)
 
-    copy(opts.destination, opts.type)
+    # fork off a thread to watch for udev events
+    thread = threading.Thread(target=udev_loop, args=(opts,))
+    thread.daemon = True
+    thread.start()
 
-    logger.debug('success; exiting')
+    task_loop(opts)
+
+    logger.debug('main is exiting')
 
 
 if __name__ == '__main__':

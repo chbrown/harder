@@ -46,6 +46,9 @@ It seems the following `ENV{ID_CDROM_???}` boolean variables will be available:
 
 - [Writing udev rules](http://www.reactivated.net/writing_udev_rules.html)
 
+http://salt.readthedocs.org/en/latest/ref/states/all/salt.states.supervisord.html
+http://salt.readthedocs.org/en/latest/ref/modules/all/salt.modules.supervisord.html
+
 
 ## Installation
 
