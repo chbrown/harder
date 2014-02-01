@@ -7,6 +7,8 @@ import redis
 from datetime import datetime
 # import time
 
+PREFIX = 'harder:'
+
 import pyudev
 
 # from pprint import pprint
@@ -34,7 +36,7 @@ def stderr(s):
 
 def udev_loop(opts):
     context = pyudev.Context()
-    r = redis.StrictRedis()
+    r = redis.StrictRedis(host=opts.cc)
 
     monitor = pyudev.Monitor.from_netlink(context)
     monitor.filter_by(subsystem='block', device_type='disk')
@@ -47,13 +49,18 @@ def udev_loop(opts):
         # device = pyudev.Device.from_name(context, 'block', 'sr0')
         # device = pyudev.Device.from_device_file(context, '/dev/sr0')
         # only report if a label is available (meaning the drive is available)
+        stderr('device.ID_FS_LABEL? = %r' % ('ID_FS_LABEL' in device))
         if 'ID_FS_LABEL' in device:
-            r.hmset(opts.cc, dict(
+            values = dict(
                 action=device.action,
                 label=device.get('ID_FS_LABEL'),
                 fs_type=device.get('ID_FS_TYPE'),
                 devname=device.get('DEVNAME')
-            ))
+            )
+            stderr('HMSET %s %r' % (PREFIX + opts.host, values))
+            r.hmset(PREFIX + opts.host, values)
+            stderr('LPUSH %s %s' % (PREFIX + 'change', opts.host))
+            r.lpush(PREFIX + 'change', opts.host)
 
 
 def task_loop(opts):

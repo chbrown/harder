@@ -28,7 +28,8 @@
     "send": "*",
     "streaming": "*",
     "sv": "*",
-    "underscore": "*"
+    "underscore": "*",
+    "ws": "*"
   },
   "staticDependencies": {
     "angular": "*",
