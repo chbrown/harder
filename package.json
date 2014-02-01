@@ -1,0 +1,42 @@
+{
+  "name": "harder",
+  "version": "0.0.1",
+  "description": "Automatically copy soft media, like CDs and DVDs, to your hard drive",
+  "keywords": ["cd", "dvd", "media", "transfer", "disk", "drive", "luddite"],
+  "homepage": "https://github.com/chbrown/harder",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/chbrown/harder.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chbrown/harder/issues"
+  },
+  "author": "Christopher Brown",
+  "license": "MIT",
+  "dependencies": {
+    "amulet": "*",
+    "async": "*",
+    "cookies": "git://github.com/chbrown/cookies.git",
+    "formidable": "*",
+    "hiredis": "*",
+    "http-enhanced": "*",
+    "loge": "*",
+    "optimist": "*",
+    "redis": "*",
+    "regex-router": "*",
+    "request": "*",
+    "send": "*",
+    "streaming": "*",
+    "sv": "*",
+    "underscore": "*"
+  },
+  "staticDependencies": {
+    "angular": "*",
+    "ngStorage": {
+      "url": "git://github.com/gsklee/ngStorage.git",
+      "filter": ["ngStorage.js", "ngStorage.min.js"]
+    },
+    "underscore": "*"
+  },
+  "staticPattern": "static/lib/{file}"
+}
