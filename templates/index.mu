@@ -14,11 +14,8 @@
   <section class="monitor">
     <h4>Monitor</h4>
     <div ng-repeat="line in monitor track by $index" class="log">
-      <div>
-        <span style="float: right">{{$index}}</span>
-        <code>{{line}}</code>
-      </div>
+      <span style="float: right">{{$index}}</span>
+      <code>{{line}}</code>
     </div>
   </section>
-
 </div>

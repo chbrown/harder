@@ -30,8 +30,25 @@ def copy(opts):
     r = redis.StrictRedis(host=opts.cc)
 
     # get the label from the database, since it might have been manually set
-    label = r.get(ns(opts.host, 'label'))
-    destination = os.path.join(opts.destination, label)
+    original_label = r.get(ns(opts.host, 'label'))
+    # but even then, we don't use it if it already exists
+    for i in range(100):
+        if i == 0:
+            label = original_label
+        else:
+            # increment label
+            label = '%s-%02d' % (original_label, i)
+
+        destination = os.path.join(opts.destination, label)
+        if not os.path.exists(destination):
+            # success!
+            if label != original_label:
+                # publish a change if we ended up having to change the value
+                label = r.set(ns(opts.host, 'label'), label)
+                r.publish(ns(opts.host, 'action'), 'change')
+            break
+    else:
+        raise Exception('No available paths found')
 
     # mount
     r.publish(ns(opts.host, 'action'), 'mounting')
@@ -39,10 +56,12 @@ def copy(opts):
     subprocess.call(['mount', '/dev/sr0', mount_point])
 
     # copy
+    wd = os.getcwd()
     os.chdir(mount_point)
     progress = -1
     filenames = list(walk('.'))
     total = len(filenames)
+    r.publish(ns(opts.host, 'action'), 'found %d files' % total)
     logger.info('copying %d files', total)
     for i, source_filename in enumerate(filenames):
         source_filepath = os.path.join(mount_point, source_filename)
@@ -57,16 +76,10 @@ def copy(opts):
             progress = percentage
             r.publish(ns(opts.host, 'action'), '%d%%' % progress)
 
+    # change dir back to original so that we can unmount
+    os.chdir(wd)
+    logger.info('done; cd %s', wd)
     r.publish(ns(opts.host, 'action'), 'done')
-
-    # from datetime import datetime
-    # timestamp = datetime.now().strftime('%Y-%m-%dT%H-%M-%S')
-    # log_filepath = os.path.join(destination, timestamp + '.log')
-    # with open(log_filepath, 'w') as log_fd:
-    #     print >> log_fd, 'copying %s to %s' % (media_type, destination)
-    #     print >> log_fd, 'ENV'
-    #     for env_key, env_value in os.environ.items():
-    #         print >> log_fd, '  %s=%s' % (env_key, env_value)
 
 
 def eject(opts):

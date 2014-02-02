@@ -49,7 +49,7 @@ module.exports = function(req, socket, upgradeHead) {
   client.monitor(function(err, res) {
     if (err) return logger.error('redis.monitor error:', err);
 
-    logger.info('Entering monitoring mode.');
+    logger.debug('entering redis monitoring mode');
   });
   client.on('monitor', function(time, args) {
     var date = new Date(time*1000);
