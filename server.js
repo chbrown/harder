@@ -34,11 +34,15 @@ else if (argv.version) {
 }
 else {
   var root_controller = require('./controllers');
+  var ws_controller = require('./controllers/websockets');
 
-  http.createServer(function(req, res) {
+  http.createServer().listen(argv.port, argv.hostname, function() {
+    logger.info('listening on http://%s:%d', argv.hostname, argv.port);
+  }).on('request', function(req, res) {
     logger.debug('%s %s', req.method, req.url);
     root_controller(req, res);
-  }).listen(argv.port, argv.hostname, function() {
-    logger.info('listening on http://%s:%d', argv.hostname, argv.port);
+  }).on('upgrade', function(req, socket, upgradeHead) {
+    logger.debug('upgrade %s', req.url);
+    ws_controller(req, socket, upgradeHead);
   });
 }

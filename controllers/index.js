@@ -1,73 +1,82 @@
 /*jslint node: true */
-var request = require('request');
+var _ = require('underscore');
 var amulet = require('amulet');
-var Router = require('regex-router');
+var async = require('async');
 var http = require('http-enhanced');
-var ws = require('ws');
-
+var logger = require('loge');
 var redis = require('redis');
-
-var amulet = require('amulet');
+// var request = require('request');
 var Router = require('regex-router');
 
-var logger = require('loge');
-
-var websocket_server = new ws.Server({port: 3842});
-websocket_server.on('connection', function(ws) {
-  logger.debug('ws connection established.');
-  // ws.on('message', function(message) {
-  //     console.log('received: %s', message);
-  // });
-  // setTimeout(function() {
-  //   ws.send('delayed welcome: hey!');
-  // }, 2000);
-});
-
-(function change_loop() {
-  var client = redis.createClient();
-  client.brpop('harder:change', 0, function(err, result) {
-    if (err) logger.error('client brpop error:', err);
-    var clients = websocket_server.clients;
-
-    var key = result[0];
-    var value = result[1];
-    logger.debug('redis change: %s << %s; informing %d clients', key, value, clients.length);
-    clients.forEach(function(client) {
-      client.send(value + ' changed');
-    });
-
-    setImmediate(change_loop);
-  });
-})();
-// websocket.on('open', function() {
-//     websocket.send('something');
-// });
-// websocket.on('message', function(data, flags) {
-//   // flags.binary will be set if a binary data is received
-//   // flags.masked will be set if the data was masked
-// });
+var ns = require('../lib').ns;
 
 var R = new Router(function(req, res) {
   res.die(404, 'No resource at: ' + req.url);
 });
+
+var die = function(res, err) {
+  logger.error('500 ERR:', err);
+  return res.die('Server Error: ' + err.toString());
+};
 
 R.any(/^\/(static|favicon)/, require('./static'));
 
 /** GET /
 Show main page */
 R.get('/', function(req, res) {
-  var ctx = {};
-  amulet.stream(['layout.mu', 'index.mu'], ctx).pipe(res);
+  amulet.stream(['layout.mu', 'index.mu'], {}).pipe(res);
+});
+
+/** GET /hosts
+Get a list of the current hosts, using "KEYS harder:*" */
+R.get(/^\/hosts$/, function(req, res, m) {
+  var client = redis.createClient();
+  // var key = ns(m[1]);
+  client.keys(ns('*'), function(err, keys) {
+    if (err) return die(res, err);
+
+    var all_hosts = keys.map(function(key) {
+      return key.split(':')[1];
+    });
+
+    var hosts = _.uniq(all_hosts);
+
+    res.json(hosts);
+  });
 });
 
 
-
-R.get(/\/hosts\/(\w+).json/, function(req, res, m) {
+/** GET /hosts/:host
+Return current hash representing state of host */
+R.get(/^\/hosts\/(.+)$/, function(req, res, m) {
   var client = redis.createClient();
-  client.hgetall(m[1], function(err, hash) {
+  var host = m[1];
+  client.keys(ns(host, '*'), function(err, keys) {
+    if (err) return die(res, err);
+
+    client.mget(keys, function(err, values) {
+      if (err) return die(res, err);
+
+      var suffixes = keys.map(function(key) {
+        return key.split(':')[2];
+      });
+
+      res.json(_.object(_.zip(suffixes, values)));
+    });
+  });
+});
+
+/** PUT /hosts/:host/tasks/:task
+Add task to host's task queue
+*/
+R.put(/^\/hosts\/(.+?)\/(\w+)$/, function(req, res, m) {
+  var client = redis.createClient();
+  var host = m[1];
+  var task = m[2];
+  client.publish(ns(host, 'task'), task, function(err, result) {
     if (err) return res.die('Redis error: ' + err.toString());
 
-    res.json(hash);
+    res.json(result);
   });
 });
 

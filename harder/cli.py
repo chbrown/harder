@@ -1,32 +1,16 @@
-import os
 import sys
 import argparse
-import threading
+# import threading
+# import atexit
 import socket
 import redis
-from datetime import datetime
-# import time
-
-PREFIX = 'harder:'
-
 import pyudev
 
-# from pprint import pprint
+from harder import tasks
+from harder.lib import ns
+
 import logging
 logger = logging.getLogger(__name__)
-
-
-def copy(destination, media_type):
-    logger.info('copying %s to %s', media_type, destination)
-
-    timestamp = datetime.now().strftime('%Y-%m-%dT%H-%M-%S')
-    log_filepath = os.path.join(destination, timestamp + '.log')
-
-    with open(log_filepath, 'w') as log_fd:
-        print >> log_fd, 'copying %s to %s' % (media_type, destination)
-        print >> log_fd, 'ENV'
-        for env_key, env_value in os.environ.items():
-            print >> log_fd, '  %s=%s' % (env_key, env_value)
 
 
 def stderr(s):
@@ -34,44 +18,49 @@ def stderr(s):
     sys.stderr.flush()
 
 
-def udev_loop(opts):
+def make_udev_thread(opts):
     context = pyudev.Context()
+    # device = pyudev.Device.from_name(context, 'block', 'sr0')
+
     r = redis.StrictRedis(host=opts.cc)
 
     monitor = pyudev.Monitor.from_netlink(context)
     monitor.filter_by(subsystem='block', device_type='disk')
-    monitor.start()
+    # monitor.start()
 
-    stderr('udev polling starting')
-    for device in iter(monitor.poll, None):
+    # for device in iter(monitor.poll, None):
+    def callback(device):
         stderr('%s on %s' % (device.action, device.device_path))
-        # device = find_device(DEVNAME='/dev/sr0')
-        # device = pyudev.Device.from_name(context, 'block', 'sr0')
-        # device = pyudev.Device.from_device_file(context, '/dev/sr0')
         # only report if a label is available (meaning the drive is available)
-        stderr('device.ID_FS_LABEL? = %r' % ('ID_FS_LABEL' in device))
-        if 'ID_FS_LABEL' in device:
-            values = dict(
-                action=device.action,
-                label=device.get('ID_FS_LABEL'),
-                fs_type=device.get('ID_FS_TYPE'),
-                devname=device.get('DEVNAME')
-            )
-            stderr('HMSET %s %r' % (PREFIX + opts.host, values))
-            r.hmset(PREFIX + opts.host, values)
-            stderr('LPUSH %s %s' % (PREFIX + 'change', opts.host))
-            r.lpush(PREFIX + 'change', opts.host)
+        # stderr('device.ID_FS_LABEL? = %r' % ('ID_FS_LABEL' in device))
+        # set the label & filesystem if it doesn't exist (it's deleted when the drive is ejected)
+        ready = tasks.update(opts, device)
+
+        # default to the given action (always 'change', as far as I can tell)
+        action = 'ready' if ready else device.action
+        r.publish(ns(opts.host, 'action'), action)
+
+    return pyudev.MonitorObserver(monitor, callback=callback)
 
 
 def task_loop(opts):
     # loop / block while listening for local tasks
     r = redis.StrictRedis(host=opts.cc)
+    pubsub = r.pubsub()
 
-    key = opts.host + ':tasks'
-    stderr('looping redis BRPOP %s' % key)
-    while True:
-        task = r.brpop(key)
-        stderr('performing task: %r' % task)
+    pubsub.subscribe(ns(opts.host, 'task'))
+    stderr('pub/sub listening: %s' % ', '.join(pubsub.channels))
+    # try:
+    for message in pubsub.listen():
+        # the first message will be a dummy success message like:
+        # {'pattern': None, 'type': 'subscribe', 'channel': 'harder:n004:task', 'data': 1L}
+        # real messages will look like:
+        # {'pattern': None, 'type': 'message', 'channel': 'harder:n004:task', 'data': 'eject'}
+        if message['type'] == 'message':
+            task = message['data']
+            stderr('performing task: %r' % task)
+            task_func = getattr(tasks, task)
+            task_func(opts)
 
 
 def main():
@@ -91,13 +80,23 @@ def main():
     logging.basicConfig(level=level)
 
     # fork off a thread to watch for udev events
-    thread = threading.Thread(target=udev_loop, args=(opts,))
-    thread.daemon = True
-    thread.start()
+    udev_thread = make_udev_thread(opts)
+    # threading.Thread(target=udev_loop, args=(opts,))
+    # udev_thread.daemon = False
+    stderr('udev polling starting')
+    udev_thread.start()
 
-    task_loop(opts)
+    try:
+        task_loop(opts)
+    except (KeyboardInterrupt, SystemExit), exc:
+        stderr('task_loop broken: %r' % exc)
+    finally:
+        udev_thread.stop()
+        stderr('udev_loop stopped')
 
-    logger.debug('main is exiting')
+    # @atexit.register
+    # def cleanup():
+    #     logger.debug('atexit cleanup')
 
 
 if __name__ == '__main__':
