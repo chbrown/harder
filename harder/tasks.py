@@ -94,6 +94,7 @@ def update(opts, device=None):
     Return a boolean representing whether or not the device is ready
     '''
     if device is None:
+        # import pyudev
         context = pyudev.Context()
         device = pyudev.Device.from_device_file(context, '/dev/sr0')
 
